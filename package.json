@@ -1,0 +1,12 @@
+{
+  "name": "shader-variant-collection",
+  "version": "1.0.0",
+  "description": "Shader variant collection server with web interface",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

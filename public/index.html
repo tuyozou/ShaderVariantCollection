@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>变体收集网</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 24px;
+        }
+        
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .toolbar-left {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .toolbar-right {
+            flex: 1;
+            display: flex;
+            justify-content: flex-end;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            background-color: #fff;
+            color: #333;
+            transition: all 0.2s;
+        }
+        
+        button:hover {
+            background-color: #eee;
+            border-color: #999;
+        }
+        
+        .search-box {
+            padding: 10px 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fff;
+            color: #333;
+            font-size: 14px;
+            width: 300px;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            border-color: #999;
+        }
+        
+        .search-box::placeholder {
+            color: #999;
+        }
+        
+        .stats {
+            text-align: center;
+            margin-bottom: 15px;
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .data-list {
+            background-color: #fff;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        
+        .data-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .data-item:last-child {
+            border-bottom: none;
+        }
+        
+        .data-item:hover {
+            background-color: #fafafa;
+        }
+        
+        .data-message {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            color: #333;
+            word-break: break-all;
+            margin-bottom: 4px;
+        }
+        
+        .data-time {
+            font-size: 12px;
+            color: #999;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .page-btn {
+            padding: 8px 12px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            color: #333;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .page-btn:hover {
+            background-color: #eee;
+            border-color: #999;
+        }
+        
+        .page-btn.active {
+            background-color: #333;
+            color: #fff;
+            border-color: #333;
+        }
+        
+        .page-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>变体收集网</h1>
+        
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <button onclick="refreshData()">刷新</button>
+                <button onclick="clearData()">清空</button>
+            </div>
+            <div class="toolbar-right">
+                <input type="text" class="search-box" id="searchInput" placeholder="搜索..." oninput="onSearchInput()">
+            </div>
+        </div>
+        
+        <div class="stats" id="stats"></div>
+        
+        <div class="data-list" id="dataList">
+            <div class="loading">加载中...</div>
+        </div>
+        
+        <div class="pagination" id="pagination"></div>
+    </div>
+
+    <script>
+        const PAGE_SIZE = 50;
+        let allData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        let searchTimeout = null;
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/data');
+                allData = await response.json();
+                applyFilter();
+            } catch (err) {
+                console.error('Error fetching data:', err);
+                document.getElementById('dataList').innerHTML = 
+                    '<div class="empty-state">加载失败，请重试</div>';
+            }
+        }
+
+        function applyFilter() {
+            const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+            
+            if (searchTerm) {
+                filteredData = allData.filter(item => 
+                    item.message.toLowerCase().includes(searchTerm)
+                );
+            } else {
+                filteredData = [...allData];
+            }
+            
+            currentPage = 1;
+            render();
+        }
+
+        function render() {
+            const totalItems = filteredData.length;
+            const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1;
+            const startIndex = (currentPage - 1) * PAGE_SIZE;
+            const endIndex = Math.min(startIndex + PAGE_SIZE, totalItems);
+            const pageData = filteredData.slice(startIndex, endIndex);
+
+            const statsEl = document.getElementById('stats');
+            if (totalItems === 0) {
+                statsEl.textContent = '共 0 条';
+            } else {
+                statsEl.textContent = `显示 ${startIndex + 1}-${endIndex} / 共 ${totalItems} 条`;
+            }
+
+            const listEl = document.getElementById('dataList');
+            if (pageData.length === 0) {
+                listEl.innerHTML = '<div class="empty-state">暂无数据</div>';
+            } else {
+                listEl.innerHTML = pageData.map(item => `
+                    <div class="data-item">
+                        <div class="data-message">${escapeHtml(item.message)}</div>
+                        <div class="data-time">${formatTime(item.time)}</div>
+                    </div>
+                `).join('');
+            }
+
+            renderPagination(totalPages);
+        }
+
+        function renderPagination(totalPages) {
+            const paginationEl = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                paginationEl.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            
+            html += `<button class="page-btn" onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
+            
+            const maxVisible = 7;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+            
+            if (endPage - startPage < maxVisible - 1) {
+                startPage = Math.max(1, endPage - maxVisible + 1);
+            }
+
+            if (startPage > 1) {
+                html += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
+                if (startPage > 2) {
+                    html += `<span style="color:#999;padding:0 5px;">...</span>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += `<span style="color:#999;padding:0 5px;">...</span>`;
+                }
+                html += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+            }
+            
+            html += `<button class="page-btn" onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+            
+            paginationEl.innerHTML = html;
+        }
+
+        function goToPage(page) {
+            const totalPages = Math.ceil(filteredData.length / PAGE_SIZE) || 1;
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            render();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function refreshData() {
+            document.getElementById('dataList').innerHTML = '<div class="loading">加载中...</div>';
+            fetchData();
+        }
+
+        async function clearData() {
+            try {
+                const response = await fetch('/clear', { method: 'POST' });
+                const result = await response.json();
+                if (result.ok) {
+                    allData = [];
+                    filteredData = [];
+                    currentPage = 1;
+                    render();
+                }
+            } catch (err) {
+                console.error('Error clearing data:', err);
+            }
+        }
+
+        function onSearchInput() {
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+            searchTimeout = setTimeout(() => {
+                applyFilter();
+            }, 200);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTime(isoTime) {
+            const date = new Date(isoTime);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        fetchData();
+    </script>
+</body>
+</html>

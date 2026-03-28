@@ -1,0 +1,10 @@
+[
+  {
+    "message": "Shader Unlit/Shader2, subshader 0, pass 0, stage all: variant _GREEN_ON not found.",
+    "time": "2026-03-28T06:09:28.681Z"
+  },
+  {
+    "message": "Shader Unlit/Shader2, subshader 0, pass 0, stage all: variant _BLUE_ON _GREEN_ON not found.",
+    "time": "2026-03-28T06:09:33.431Z"
+  }
+]
