@@ -10,9 +10,45 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory data and deduplication set
+// In-memory data and deduplication map
 let dataList = [];
-let messageSet = new Set();
+let messageMap = new Map(); // message -> { index, versions: Set }
+
+// Semver comparison function with fallback to string sort
+function compareSemver(a, b) {
+    const parseVersion = (v) => {
+        const match = v.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+        if (match) {
+            return [
+                parseInt(match[1], 10) || 0,
+                parseInt(match[2], 10) || 0,
+                parseInt(match[3], 10) || 0
+            ];
+        }
+        return null;
+    };
+    
+    const aParts = parseVersion(a);
+    const bParts = parseVersion(b);
+    
+    // If both are valid semver, compare numerically
+    if (aParts && bParts) {
+        for (let i = 0; i < 3; i++) {
+            if (aParts[i] !== bParts[i]) {
+                return aParts[i] - bParts[i];
+            }
+        }
+        return 0;
+    }
+    
+    // Fallback to string comparison
+    return a.localeCompare(b);
+}
+
+// Sort versions array using semver comparison
+function sortVersions(versions) {
+    return [...versions].sort(compareSemver);
+}
 
 // Load data from JSON file on startup
 function loadData() {
@@ -20,14 +56,18 @@ function loadData() {
         if (fs.existsSync(DATA_FILE)) {
             const content = fs.readFileSync(DATA_FILE, 'utf-8');
             dataList = JSON.parse(content);
-            // Rebuild the deduplication set
-            messageSet = new Set(dataList.map(item => item.message));
+            // Rebuild the message -> versions map
+            messageMap = new Map();
+            dataList.forEach((item, index) => {
+                const versions = new Set(item.versions || []);
+                messageMap.set(item.message, { index, versions });
+            });
             console.log(`Loaded ${dataList.length} records from data.json`);
         }
     } catch (err) {
         console.error('Error loading data:', err);
         dataList = [];
-        messageSet = new Set();
+        messageMap = new Map();
     }
 }
 
@@ -42,25 +82,41 @@ function saveData() {
 
 // POST /submit - Submit variant data
 app.post('/submit', (req, res) => {
-    const { message } = req.body;
+    const { message, version } = req.body;
     
     if (!message) {
         return res.status(400).json({ ok: false, error: 'message is required' });
     }
     
-    // Check for duplicate
-    if (messageSet.has(message)) {
-        return res.json({ ok: false, exists: true });
+    const ver = version || 'unknown';
+    
+    // Check if message exists
+    if (messageMap.has(message)) {
+        const entry = messageMap.get(message);
+        
+        // Check if version already exists
+        if (entry.versions.has(ver)) {
+            return res.json({ ok: false, exists: true });
+        }
+        
+        // Add new version to existing message
+        entry.versions.add(ver);
+        dataList[entry.index].versions = sortVersions(entry.versions);
+        saveData();
+        
+        return res.json({ ok: true });
     }
     
     // Add new entry
-    const entry = {
+    const newEntry = {
         message: message,
-        time: new Date().toISOString()
+        time: new Date().toISOString(),
+        versions: [ver]
     };
     
-    dataList.push(entry);
-    messageSet.add(message);
+    const index = dataList.length;
+    dataList.push(newEntry);
+    messageMap.set(message, { index, versions: new Set([ver]) });
     saveData();
     
     res.json({ ok: true });
@@ -76,7 +132,7 @@ app.get('/data', (req, res) => {
 // POST /clear - Clear all data
 app.post('/clear', (req, res) => {
     dataList = [];
-    messageSet = new Set();
+    messageMap = new Map();
     saveData();
     res.json({ ok: true });
 });

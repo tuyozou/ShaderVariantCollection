@@ -44,10 +44,11 @@
             gap: 10px;
         }
         
-        .toolbar-right {
+            .toolbar-right {
             flex: 1;
             display: flex;
             justify-content: flex-end;
+            gap: 10px;
         }
         
         button {
@@ -124,6 +125,54 @@
             color: #999;
         }
         
+        .version-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 6px 0;
+        }
+        
+        .version-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background-color: #e8f4fd;
+            color: #1976d2;
+            border-radius: 3px;
+            font-size: 12px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        }
+        
+        .version-more {
+            display: inline-block;
+            padding: 2px 8px;
+            background-color: #f0f0f0;
+            color: #666;
+            border-radius: 3px;
+            font-size: 12px;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .version-more:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .version-select {
+            padding: 10px 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fff;
+            color: #333;
+            font-size: 14px;
+            min-width: 150px;
+            cursor: pointer;
+        }
+        
+        .version-select:focus {
+            outline: none;
+            border-color: #999;
+        }
+        
         .pagination {
             display: flex;
             justify-content: center;
@@ -182,6 +231,9 @@
             </div>
             <div class="toolbar-right">
                 <input type="text" class="search-box" id="searchInput" placeholder="搜索..." oninput="onSearchInput()">
+                <select class="version-select" id="versionSelect" onchange="onVersionChange()">
+                    <option value="">所有版本</option>
+                </select>
             </div>
         </div>
         
@@ -196,15 +248,119 @@
 
     <script>
         const PAGE_SIZE = 50;
+        const VERSION_COLLAPSE_THRESHOLD = 10;
         let allData = [];
         let filteredData = [];
         let currentPage = 1;
         let searchTimeout = null;
+        let expandedItems = new Set(); // Track which items have expanded versions
+
+        // Semver comparison function with fallback to string sort
+        function compareSemver(a, b) {
+            const parseVersion = (v) => {
+                const match = v.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+                if (match) {
+                    return [
+                        parseInt(match[1], 10) || 0,
+                        parseInt(match[2], 10) || 0,
+                        parseInt(match[3], 10) || 0
+                    ];
+                }
+                return null;
+            };
+            
+            const aParts = parseVersion(a);
+            const bParts = parseVersion(b);
+            
+            if (aParts && bParts) {
+                for (let i = 0; i < 3; i++) {
+                    if (aParts[i] !== bParts[i]) {
+                        return aParts[i] - bParts[i];
+                    }
+                }
+                return 0;
+            }
+            
+            return a.localeCompare(b);
+        }
+
+        // Extract all unique versions from data and sort them
+        function extractAllVersions(data) {
+            const versionSet = new Set();
+            data.forEach(item => {
+                if (item.versions) {
+                    item.versions.forEach(v => versionSet.add(v));
+                }
+            });
+            return [...versionSet].sort(compareSemver);
+        }
+
+        // Populate version dropdown
+        function populateVersionDropdown() {
+            const versions = extractAllVersions(allData);
+            const select = document.getElementById('versionSelect');
+            const currentValue = select.value;
+            
+            select.innerHTML = '<option value="">所有版本</option>';
+            versions.forEach(v => {
+                select.innerHTML += `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
+            });
+            
+            // Restore selection if still valid
+            if (versions.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        // Render version tags with collapse/expand
+        function renderVersionTags(versions, itemIndex) {
+            if (!versions || versions.length === 0) {
+                return '<div class="version-tags"><span class="version-tag">unknown</span></div>';
+            }
+            
+            const isExpanded = expandedItems.has(itemIndex);
+            const threshold = VERSION_COLLAPSE_THRESHOLD;
+            
+            if (versions.length <= threshold || isExpanded) {
+                let html = '<div class="version-tags">';
+                versions.forEach(v => {
+                    html += `<span class="version-tag">${escapeHtml(v)}</span>`;
+                });
+                if (versions.length > threshold && isExpanded) {
+                    html += `<button class="version-more" onclick="toggleVersions(${itemIndex})">收起</button>`;
+                }
+                html += '</div>';
+                return html;
+            } else {
+                let html = '<div class="version-tags">';
+                for (let i = 0; i < threshold; i++) {
+                    html += `<span class="version-tag">${escapeHtml(versions[i])}</span>`;
+                }
+                const remaining = versions.length - threshold;
+                html += `<button class="version-more" onclick="toggleVersions(${itemIndex})">+${remaining} 更多</button>`;
+                html += '</div>';
+                return html;
+            }
+        }
+
+        function toggleVersions(itemIndex) {
+            if (expandedItems.has(itemIndex)) {
+                expandedItems.delete(itemIndex);
+            } else {
+                expandedItems.add(itemIndex);
+            }
+            render();
+        }
+
+        function onVersionChange() {
+            applyFilter();
+        }
 
         async function fetchData() {
             try {
                 const response = await fetch('/data');
                 allData = await response.json();
+                populateVersionDropdown();
                 applyFilter();
             } catch (err) {
                 console.error('Error fetching data:', err);
@@ -215,16 +371,21 @@
 
         function applyFilter() {
             const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+            const selectedVersion = document.getElementById('versionSelect').value;
             
-            if (searchTerm) {
-                filteredData = allData.filter(item => 
-                    item.message.toLowerCase().includes(searchTerm)
-                );
-            } else {
-                filteredData = [...allData];
-            }
+            filteredData = allData.filter(item => {
+                // Search filter
+                const matchesSearch = !searchTerm || item.message.toLowerCase().includes(searchTerm);
+                
+                // Version filter
+                const matchesVersion = !selectedVersion || 
+                    (item.versions && item.versions.includes(selectedVersion));
+                
+                return matchesSearch && matchesVersion;
+            });
             
             currentPage = 1;
+            expandedItems.clear();
             render();
         }
 
@@ -246,12 +407,16 @@
             if (pageData.length === 0) {
                 listEl.innerHTML = '<div class="empty-state">暂无数据</div>';
             } else {
-                listEl.innerHTML = pageData.map(item => `
+                listEl.innerHTML = pageData.map((item, idx) => {
+                    const globalIndex = startIndex + idx;
+                    return `
                     <div class="data-item">
                         <div class="data-message">${escapeHtml(item.message)}</div>
+                        ${renderVersionTags(item.versions, globalIndex)}
                         <div class="data-time">${formatTime(item.time)}</div>
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             }
 
             renderPagination(totalPages);
@@ -321,6 +486,8 @@
                     allData = [];
                     filteredData = [];
                     currentPage = 1;
+                    expandedItems.clear();
+                    populateVersionDropdown();
                     render();
                 }
             } catch (err) {
