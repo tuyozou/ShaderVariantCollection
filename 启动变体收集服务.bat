@@ -8,24 +8,30 @@ if %errorlevel%==0 (
     echo   Server is already running
     echo ========================================
     echo.
-    echo Press any key to close...
-    pause >nul
+    timeout /t 2 >nul
     exit
 )
 
-:: Start server
+:: Change to script directory
+cd /d "%~dp0"
+
+:: Install dependencies if node_modules doesn't exist
+if not exist "node_modules" (
+    echo ========================================
+    echo   Installing dependencies...
+    echo ========================================
+    echo.
+    call npm install
+    echo.
+)
+
+:: Start server in background with custom window title
 echo ========================================
 echo   Starting server...
 echo ========================================
 echo.
-cd /d "%~dp0"
-call npm start
-
-:: Keep window open if server exits
-echo.
+start "Shader Variant Collection Server" /b node server.js
+echo   Server started on port 8880
 echo ========================================
-echo   Server stopped
-echo ========================================
-echo.
-echo Press any key to close...
-pause >nul
+timeout /t 2 >nul
+exit
