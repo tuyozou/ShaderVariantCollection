@@ -4,7 +4,8 @@ const path = require('path');
 
 const app = express();
 const PORT = 8880;
-const DATA_FILE = path.join(__dirname, 'data.json');
+const DATA_DIR = path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -62,7 +63,7 @@ function loadData() {
                 const versions = new Set(item.versions || []);
                 messageMap.set(item.message, { index, versions });
             });
-            console.log(`Loaded ${dataList.length} records from data.json`);
+            console.log(`Loaded ${dataList.length} records from data/data.json`);
         }
     } catch (err) {
         console.error('Error loading data:', err);
@@ -71,9 +72,17 @@ function loadData() {
     }
 }
 
+// Ensure data directory exists
+function ensureDataDir() {
+    if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+}
+
 // Save data to JSON file
 function saveData() {
     try {
+        ensureDataDir();
         fs.writeFileSync(DATA_FILE, JSON.stringify(dataList, null, 2), 'utf-8');
     } catch (err) {
         console.error('Error saving data:', err);
